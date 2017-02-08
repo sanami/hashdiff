@@ -53,6 +53,7 @@ module HashDiff
   #   * :delimiter (String) ['.'] the delimiter used when returning nested key references
   #   * :numeric_tolerance (Numeric) [0] should be a positive numeric value.  Value by which numeric differences must be greater than.  By default, numeric values are compared exactly; with the :tolerance option, the difference between numeric values must be greater than the given value.
   #   * :strip (Boolean) [false] whether or not to call #strip on strings before comparing
+  #   * :array_difference (Boolean) [true] array difference using LCS algorithm
   #
   # @yield [path, value1, value2] Optional block is used to compare each value, instead of default #==. If the block returns value other than true of false, then other specified comparison options will be used to do the comparison.
   #
@@ -74,7 +75,8 @@ module HashDiff
       :delimiter   =>   '.',
       :strict      =>   true,
       :strip       =>   false,
-      :numeric_tolerance => 0
+      :numeric_tolerance => 0,
+      :array_difference => true
     }.merge!(options)
 
     opts[:comparison] = block if block_given?
@@ -101,18 +103,29 @@ module HashDiff
 
     result = []
     if obj1.is_a?(Array)
-      changeset = diff_array(obj1, obj2, opts) do |lcs|
-        # use a's index for similarity
-        lcs.each do |pair|
-          result.concat(diff(obj1[pair[0]], obj2[pair[1]], opts.merge(:prefix => "#{opts[:prefix]}[#{pair[0]}]")))
+      if opts[:array_difference]
+        changeset = diff_array(obj1, obj2, opts) do |lcs|
+          # use a's index for similarity
+          lcs.each do |pair|
+            result.concat(diff(obj1[pair[0]], obj2[pair[1]], opts.merge(:prefix => "#{opts[:prefix]}[#{pair[0]}]")))
+          end
         end
-      end
 
-      changeset.each do |change|
-        if change[0] == '-'
-          result << ['-', "#{opts[:prefix]}[#{change[1]}]", change[2]]
-        elsif change[0] == '+'
-          result << ['+', "#{opts[:prefix]}[#{change[1]}]", change[2]]
+        changeset.each do |change|
+          if change[0] == '-'
+            result << ['-', "#{opts[:prefix]}[#{change[1]}]", change[2]]
+          elsif change[0] == '+'
+            result << ['+', "#{opts[:prefix]}[#{change[1]}]", change[2]]
+          end
+        end
+      else
+        # simple array change
+        if obj2.is_a?(Array)
+          if (obj1.length != obj2.length) || (obj1 & obj2 != obj1)
+            return [['~', opts[:prefix], obj1, obj2]]
+          end
+        elsif obj1.present? || obj2.present?
+          return [['~', opts[:prefix], obj1, obj2]]
         end
       end
     elsif obj1.is_a?(Hash)
